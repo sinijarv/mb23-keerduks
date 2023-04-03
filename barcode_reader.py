@@ -32,4 +32,7 @@ class BarcodeReader:
                 self.data_ready = True
                 print(self.barcode_data)
                 data = []
-        #return self.endpoint.read(self.endpoint.wMaxPacketSize, timeout=0)
+                
+                
+    def is_ready(self) -> bool:
+        return self.data_ready
