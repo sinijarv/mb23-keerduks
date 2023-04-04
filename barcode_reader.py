@@ -33,6 +33,7 @@ class BarcodeReader:
                 print(self.barcode_data)
                 data = []
                 
-                
+    
+    #! Check the use of this function, wonky atm!
     def is_ready(self) -> bool:
         return self.data_ready

@@ -23,12 +23,12 @@ class StateMachine:
         self.prev_state: State = None
         
         
-    def run(self) -> None:
+    async def run(self) -> None:
         if self.current_state == self.prev_state:
             self.current_state.step()
             return
         
-        self.prev_state.on_exit()
+        await self.prev_state.on_exit()
         self.current_state.on_enter()
         self.prev_state = self.current_state
         
