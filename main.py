@@ -11,7 +11,7 @@ async def main():
     asyncio.create_task(controller.out_barcode.read())
 
     while True:
-        controller.run()
+        await controller.run()
         await asyncio.sleep(0.1)
 
 asyncio.run(main())
