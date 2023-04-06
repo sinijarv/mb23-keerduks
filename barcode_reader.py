@@ -1,9 +1,16 @@
-import usb.core
-import usb.util
 import asyncio
 import requests
 import struct
+import logging
+import sys
 
+# Configure logging with a custom format
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s %(levelname)s: %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S',
+    handlers=[logging.StreamHandler(sys.stdout)]
+)
 
 # Barcode reader class, which sends its data over usb
 class BarcodeReader:
@@ -28,7 +35,7 @@ class BarcodeReader:
                 data.append(reading)
             except:
                 if len(data) > 0:
-                    print(data)
+                    logging.debug(f'Read a card: {" ".join([hex(x)[2:].zfill(2) for x in data])}')
                     await self.authorize(data)
                     data = []
             
