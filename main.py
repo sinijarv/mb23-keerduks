@@ -1,8 +1,14 @@
 #!/usr/bin/python
 
 import asyncio
+import signal
 
 from gate_controller import GateController
+
+
+def handle_sigint():
+    loop = asyncio.get_event_loop()
+    loop.stop()
 
 async def main():
     controller = GateController()
@@ -14,4 +20,10 @@ async def main():
         await controller.run()
         await asyncio.sleep(0.1)
 
-asyncio.run(main())
+if __name__ == '__main__':
+    loop = asyncio.get_event_loop()
+    loop.add_signal_handler(signal.SIGINT, handle_sigint)
+    try:
+        loop.run_until_complete(main())
+    except RuntimeError:
+        print('Program closed!')
