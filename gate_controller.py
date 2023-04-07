@@ -10,6 +10,7 @@ from time import monotonic
 from datetime import timedelta
 import logging
 import sys
+import requests
 
 from state_machine_base import State, StateMachine
 from relay_motor import RelayMotor
@@ -32,6 +33,8 @@ class LockedState(State):
     
     async def on_enter(self) -> None:
         logging.info('entering Locked state')
+        await self.controller.in_motor.forward()
+        await self.controller.out_motor.forward()
         self.controller.in_motor.stop()
         self.controller.out_motor.stop()
         self.controller.in_led.off()
@@ -72,15 +75,24 @@ class EnterState(State):
         
     async def on_enter(self) -> None:
         logging.info('entering Enter state')
-        self.controller.in_motor.forward()
+        await self.controller.in_motor.backward()
         self.controller.in_led.on()
         self.start_time = monotonic()
+        self.gate_moved_msg_sent = False
     
     
     async def step(self) -> None:
         # Person is going through the gate
         if self.controller.is_gate_moving():
-            # TODO: Send moved message to server
+            if not self.gate_moved_msg_sent:
+                self.gate_moved_msg_sent = True
+                requests.get('http://10.0.0.108/gate_api.php', params={
+                    'kaart': self.controller.in_barcode.authorized_barcode,
+                    'dir': self.controller.in_barcode.dir,
+                    'passed': 1,
+                    'verbose': 1})
+                self.controller.in_barcode.authorized_barcode = None
+            await asyncio.sleep(0.1)
             return
         
         # If gate hasn't started moving after time, lock the gate
@@ -92,8 +104,7 @@ class EnterState(State):
     async def on_exit(self) -> None:
         logging.info('exiting Enter state')
         self.controller.in_led.off()
-        self.controller.in_motor.backward()
-        await asyncio.sleep(1) # Wait for motor to lock the gate
+        await self.controller.in_motor.forward()
 
 
 class ExitState(State):
@@ -103,15 +114,24 @@ class ExitState(State):
         
     async def on_enter(self) -> None:
         logging.info('entering Exit state')
-        self.controller.out_motor.forward()
+        await self.controller.out_motor.backward()
         self.controller.out_led.on()
         self.start_time = monotonic()
+        self.gate_moved_msg_sent = False
     
     
     async def step(self) -> None:
         # Person is going through the gate
         if self.controller.is_gate_moving():
-            # TODO: Send moved message to server
+            if not self.gate_moved_msg_sent:
+                self.gate_moved_msg_sent = True
+                requests.get('http://10.0.0.108/gate_api.php', params={
+                    'kaart': self.controller.out_barcode.authorized_barcode,
+                    'dir': self.controller.out_barcode.dir,
+                    'passed': 1,
+                    'verbose': 1})
+                self.controller.out_barcode.authorized_barcode = None
+            await asyncio.sleep(0.1)
             return
         
         # If gate hasn't started moving after time, lock the gate
@@ -123,8 +143,7 @@ class ExitState(State):
     async def on_exit(self) -> None:
         logging.info('exiting Exit state')
         self.controller.out_led.off()
-        self.controller.out_motor.backward()
-        await asyncio.sleep(1) # Wait for motor to lock the gate
+        await self.controller.out_motor.forward()
 
 
 class FreeEnterState(State):
@@ -134,7 +153,7 @@ class FreeEnterState(State):
         
     async def on_enter(self) -> None:
         logging.info('entering Free Enter state')
-        self.controller.in_motor.forward()
+        await self.controller.in_motor.backward()
         self.controller.in_led.on()
         self.start_time = monotonic()
         self.toggle_time_elapsed = False
@@ -143,11 +162,12 @@ class FreeEnterState(State):
     async def step(self) -> None:
         # Person is going through the gate
         if self.controller.is_gate_moving():
-            # TODO: Send moved message to server
+            await asyncio.sleep(0.1)
             return
         
         # If button is pressed down, keep the gate open
         if self.controller.in_button.is_active:
+            await asyncio.sleep(0.1)
             return
         
         # In case button was just toggled and state is already inactive, then wait some time
@@ -158,8 +178,7 @@ class FreeEnterState(State):
     
     async def on_exit(self) -> None:
         logging.info('exiting Free Enter state')
-        self.controller.in_motor.backward()
-        await asyncio.sleep(1) # Wait for motor to lock the gate
+        await self.controller.in_motor.forward()
 
 
 class FreeExitState(State):
@@ -169,7 +188,7 @@ class FreeExitState(State):
         
     async def on_enter(self) -> None:
         logging.info('entering Free Exit state')
-        self.controller.out_motor.forward()
+        await self.controller.out_motor.backward()
         self.controller.out_led.on()
         self.start_time = monotonic()
         self.toggle_time_elapsed = False
@@ -178,11 +197,12 @@ class FreeExitState(State):
     async def step(self) -> None:
         # Person is going through the gate
         if self.controller.is_gate_moving():
-            # TODO: Send moved message to server
+            await asyncio.sleep(0.1)
             return
         
         # If button is pressed down, keep the gate open
         if self.controller.in_button.is_active:
+            await asyncio.sleep(0.1)
             return
         
         # In case button was just toggled and state is already inactive, then wait some time
@@ -193,8 +213,7 @@ class FreeExitState(State):
     
     async def on_exit(self) -> None:
         logging.info('exiting Free Exit state')
-        self.controller.out_motor.backward()
-        await asyncio.sleep(1) # Wait for motor to lock the gate
+        await self.controller.out_motor.forward()
         
         
 class FaultState(State):
@@ -217,30 +236,30 @@ class FaultState(State):
 class GateController(StateMachine):
     def __init__(self) -> None:
         # Declare motor objects for handling incoming and outgoing people
-        self.in_motor = RelayMotor('GPIO17', 'GPIO27')
-        self.out_motor = RelayMotor('GPIO23', 'GPIO24')
+        self.in_motor = RelayMotor('GPIO23', 'GPIO24')
+        self.out_motor = RelayMotor('GPIO17', 'GPIO27')
         
         # Declare phototransistor objects which detect, when the motors can be returned to position
-        self.phototransistor_1 = DigitalInputDevice('GPIO20')
-        self.phototransistor_2 = DigitalInputDevice('GPIO21')
+        self.phototransistor_1 = DigitalInputDevice('GPIO20', pull_up=True)
+        self.phototransistor_2 = DigitalInputDevice('GPIO21', pull_up=True)
 
         # Declare led objects to indicate the moving direction of the gate
-        self.in_led = LED('GPIO5', active_high=False)
-        self.out_led = LED('GPIO6', active_high=False)
-        self.stop_led = LED('GPIO13', active_high=False, initial_value=True)
+        self.in_led = LED('GPIO13', active_high=False)
+        self.out_led = LED('GPIO5', active_high=False)
+        self.stop_led = LED('GPIO06', active_high=False, initial_value=True)
         
         # Declare button objects to handle overriding the gate control
         self.in_button = Button('GPIO19')
         self.out_button = Button('GPIO26')
 
         # Declare barcode readers for reading incoming and outgoing cards
-        devices = usb.core.find(find_all=True, idVendor=0x05e0, idProduct=0x1200)
+        devices = usb.core.find(find_all=True, idVendor=0x05e0, idProduct=0x0600)
         for dev in devices:
             serial = usb.util.get_string(dev, dev.iSerialNumber)[4:36]
             if serial == 'E21478C6B18CE448A31DD361F4A3BCFA':
-                self.out_barcode = BarcodeReader(dev)
+                self.out_barcode = BarcodeReader(dev, 'out', self)
             if serial == '1270FBD3FECE81458C725FA0C6749F5E':
-                self.in_barcode = BarcodeReader(dev)
+                self.in_barcode = BarcodeReader(dev, 'in', self)
                 
         # State machine related variables
         class States(Enum):
@@ -256,6 +275,6 @@ class GateController(StateMachine):
         
     
     def is_gate_moving(self):
-        if self.phototransistor_1.is_active or self.phototransistor_2.is_active:
+        if not self.phototransistor_1.is_active or not self.phototransistor_2.is_active:
             return True
     

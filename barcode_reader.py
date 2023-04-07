@@ -14,9 +14,12 @@ logging.basicConfig(
 
 # Barcode reader class, which sends its data over usb
 class BarcodeReader:
-    def __init__(self, device) -> None:
+    def __init__(self, device, dir, c) -> None:
         self.data_ready = False
         self.dev = device
+        self.dir = dir
+        self.authorized_barcode = None
+        self.controller = c
         
         if self.dev is None:
             raise ValueError('Device not found')
@@ -27,31 +30,35 @@ class BarcodeReader:
     
     
     async def read(self) -> None:
-        data: list = []
         while True:
+            if self.controller.current_state != self.controller.state.LOCKED.value:
+                await asyncio.sleep(0.5)
+                continue
             try:
-                reading = self.dev.read(self.endpoint.bEndpointAddress,
-                    self.endpoint.wMaxPacketSize, 100).tolist()[2]
-                data.append(reading)
+                reading = list(self.dev.read(self.endpoint.bEndpointAddress,
+                    self.endpoint.wMaxPacketSize, 10))
+                if reading:
+                    barcode_chars = []
+                    for charcode in reading:
+                        if ord('0') <= charcode <= ord('9'):
+                            barcode_chars.append(chr(charcode))
+                    barcode = "".join(barcode_chars)
+                    logging.debug(f'Read a card: {barcode}')
+                    await self.authorize(barcode)
+
             except:
-                if len(data) > 0:
-                    logging.debug(f'Read a card: {" ".join([hex(x)[2:].zfill(2) for x in data])}')
-                    await self.authorize(data)
-                    data = []
-            
+                pass
             await asyncio.sleep(0.02)
             
             
     async def authorize(self, barcode):
-        num_bytes = len(barcode)
-        format_string = f"{num_bytes}B"
-        packed_data = struct.pack(format_string, *barcode)
-        
-        response = requests.get('http://example.com', params={'data': packed_data})
+        response = requests.get('http://10.0.0.108/gate_api.php', params={'kaart': barcode, 'dir': self.dir, 'verbose': 1})
         
         if response.status_code == 200:
             content = response.text
-            if content == 'accepted':
+            logging.info(content)
+            if content.startswith('OK'):
+                self.authorized_barcode = barcode
                 self.data_ready = True
                 
         # To allow all swipes uncomment this

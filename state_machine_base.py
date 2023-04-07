@@ -1,3 +1,4 @@
+import asyncio
 
 # Empty prototype state class
 class State:
@@ -23,6 +24,7 @@ class StateMachine:
     async def run(self) -> None:
         if self.current_state == self.prev_state:
             await self.current_state.step()
+            await asyncio.sleep(0.05)
             return
 
         if self.prev_state is not None:
