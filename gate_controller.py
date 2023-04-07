@@ -52,6 +52,9 @@ class LockedState(State):
             self.controller.set_state(self.controller.state.EXIT.value)
             return
         
+        if self.controller.in_button.is_active and self.controller.out_button.is_active:
+            self.controller.set_state(self.controller.state.FREEWHEEL.value)
+            return
         
         if self.controller.in_button.is_active:
             self.controller.set_state(self.controller.state.FREE_ENTER.value)
@@ -78,21 +81,18 @@ class EnterState(State):
         await self.controller.in_motor.backward()
         self.controller.in_led.on()
         self.start_time = monotonic()
-        self.gate_moved_msg_sent = False
     
     
     async def step(self) -> None:
         # Person is going through the gate
         if self.controller.is_gate_moving():
-            if not self.gate_moved_msg_sent:
-                self.gate_moved_msg_sent = True
-                requests.get('http://10.0.0.108/gate_api.php', params={
-                    'kaart': self.controller.in_barcode.authorized_barcode,
-                    'dir': self.controller.in_barcode.dir,
-                    'passed': 1,
-                    'verbose': 1})
-                self.controller.in_barcode.authorized_barcode = None
-            await asyncio.sleep(0.1)
+            requests.get('http://10.0.0.108/gate_api.php', params={
+                'kaart': self.controller.in_barcode.authorized_barcode,
+                'dir': self.controller.in_barcode.dir,
+                'passed': 1,
+                'verbose': 1})
+            self.controller.in_barcode.authorized_barcode = None
+            self.controller.set_state(self.controller.state.LOCKED.value)
             return
         
         # If gate hasn't started moving after time, lock the gate
@@ -104,7 +104,6 @@ class EnterState(State):
     async def on_exit(self) -> None:
         logging.info('exiting Enter state')
         self.controller.in_led.off()
-        await self.controller.in_motor.forward()
 
 
 class ExitState(State):
@@ -117,21 +116,18 @@ class ExitState(State):
         await self.controller.out_motor.backward()
         self.controller.out_led.on()
         self.start_time = monotonic()
-        self.gate_moved_msg_sent = False
     
     
     async def step(self) -> None:
         # Person is going through the gate
         if self.controller.is_gate_moving():
-            if not self.gate_moved_msg_sent:
-                self.gate_moved_msg_sent = True
-                requests.get('http://10.0.0.108/gate_api.php', params={
-                    'kaart': self.controller.out_barcode.authorized_barcode,
-                    'dir': self.controller.out_barcode.dir,
-                    'passed': 1,
-                    'verbose': 1})
-                self.controller.out_barcode.authorized_barcode = None
-            await asyncio.sleep(0.1)
+            requests.get('http://10.0.0.108/gate_api.php', params={
+                'kaart': self.controller.out_barcode.authorized_barcode,
+                'dir': self.controller.out_barcode.dir,
+                'passed': 1,
+                'verbose': 1})
+            self.controller.out_barcode.authorized_barcode = None
+            self.controller.set_state(self.controller.state.LOCKED.value)
             return
         
         # If gate hasn't started moving after time, lock the gate
@@ -143,7 +139,6 @@ class ExitState(State):
     async def on_exit(self) -> None:
         logging.info('exiting Exit state')
         self.controller.out_led.off()
-        await self.controller.out_motor.forward()
 
 
 class FreeEnterState(State):
@@ -156,18 +151,21 @@ class FreeEnterState(State):
         await self.controller.in_motor.backward()
         self.controller.in_led.on()
         self.start_time = monotonic()
-        self.toggle_time_elapsed = False
     
     
     async def step(self) -> None:
-        # Person is going through the gate
-        if self.controller.is_gate_moving():
-            await asyncio.sleep(0.1)
+        if self.controller.in_button.is_active and self.controller.out_button.is_active:
+            self.controller.set_state(self.controller.state.FREEWHEEL.value)
             return
         
         # If button is pressed down, keep the gate open
         if self.controller.in_button.is_active:
             await asyncio.sleep(0.1)
+            return
+        
+        # Person is going through the gate
+        if self.controller.is_gate_moving():
+            self.controller.set_state(self.controller.state.LOCKED.value)
             return
         
         # In case button was just toggled and state is already inactive, then wait some time
@@ -178,7 +176,6 @@ class FreeEnterState(State):
     
     async def on_exit(self) -> None:
         logging.info('exiting Free Enter state')
-        await self.controller.in_motor.forward()
 
 
 class FreeExitState(State):
@@ -191,18 +188,21 @@ class FreeExitState(State):
         await self.controller.out_motor.backward()
         self.controller.out_led.on()
         self.start_time = monotonic()
-        self.toggle_time_elapsed = False
     
     
     async def step(self) -> None:
-        # Person is going through the gate
-        if self.controller.is_gate_moving():
-            await asyncio.sleep(0.1)
+        if self.controller.in_button.is_active and self.controller.out_button.is_active:
+            self.controller.set_state(self.controller.state.FREEWHEEL.value)
             return
         
         # If button is pressed down, keep the gate open
-        if self.controller.in_button.is_active:
+        if self.controller.out_button.is_active:
             await asyncio.sleep(0.1)
+            return
+        
+        # Person is going through the gate
+        if self.controller.is_gate_moving():
+            self.controller.set_state(self.controller.state.LOCKED.value)
             return
         
         # In case button was just toggled and state is already inactive, then wait some time
@@ -213,7 +213,42 @@ class FreeExitState(State):
     
     async def on_exit(self) -> None:
         logging.info('exiting Free Exit state')
-        await self.controller.out_motor.forward()
+        
+        
+class FreewheelState(State):
+    def __init__(self, ctrlr: GateController) -> None:
+        self.controller = ctrlr
+
+        
+    async def on_enter(self) -> None:
+        logging.info('entering Freewheel state')
+        await self.controller.in_motor.backward()
+        await self.controller.out_motor.backward()
+        self.controller.in_led.on()
+        self.controller.out_led.on()
+        self.start_time = monotonic()
+    
+    
+    async def step(self) -> None:
+        # If button is pressed down, keep the gate open
+        if self.controller.in_button.is_active and self.controller.out_button.is_active:
+            await asyncio.sleep(0.1)
+            return
+        
+        # Either way go through locked state first
+        if (self.controller.is_gate_moving() and (not self.controller.in_button.is_active or
+                                                  not self.controller.out_button.is_active)):
+            self.controller.set_state(self.controller.state.LOCKED.value)
+            return
+        
+        # In case button was just toggled and state is already inactive, then wait some time
+        if (monotonic() > self.start_time + timedelta(seconds=4).seconds):
+            self.controller.set_state(self.controller.state.LOCKED.value)
+            return
+    
+    
+    async def on_exit(self) -> None:
+        logging.info('exiting Freewheel state')
         
         
 class FaultState(State):
@@ -268,6 +303,7 @@ class GateController(StateMachine):
             EXIT = ExitState(self)
             FREE_ENTER = FreeEnterState(self)
             FREE_EXIT = FreeExitState(self)
+            FREEWHEEL = FreewheelState(self)
         self.state = States
         
         self.current_state: State = self.state.LOCKED.value
