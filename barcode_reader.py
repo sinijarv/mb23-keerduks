@@ -52,7 +52,7 @@ class BarcodeReader:
             
             
     async def authorize(self, barcode):
-        response = requests.get('http://10.0.0.108/gate_api.php', params={'kaart': barcode, 'dir': self.dir, 'verbose': 1})
+        response = requests.get('http://10.0.0.10/gate_api.php', params={'kaart': barcode, 'dir': self.dir, 'verbose': 1})
         
         if response.status_code == 200:
             content = response.text

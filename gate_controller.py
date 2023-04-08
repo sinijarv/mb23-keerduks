@@ -86,7 +86,7 @@ class EnterState(State):
     async def step(self) -> None:
         # Person is going through the gate
         if self.controller.is_gate_moving():
-            requests.get('http://10.0.0.108/gate_api.php', params={
+            requests.get('http://10.0.0.10/gate_api.php', params={
                 'kaart': self.controller.in_barcode.authorized_barcode,
                 'dir': self.controller.in_barcode.dir,
                 'passed': 1,
@@ -121,7 +121,7 @@ class ExitState(State):
     async def step(self) -> None:
         # Person is going through the gate
         if self.controller.is_gate_moving():
-            requests.get('http://10.0.0.108/gate_api.php', params={
+            requests.get('http://10.0.0.10/gate_api.php', params={
                 'kaart': self.controller.out_barcode.authorized_barcode,
                 'dir': self.controller.out_barcode.dir,
                 'passed': 1,
