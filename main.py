@@ -25,5 +25,6 @@ if __name__ == '__main__':
     loop.add_signal_handler(signal.SIGINT, handle_sigint)
     try:
         loop.run_until_complete(main())
-    except RuntimeError:
-        print('Program closed!')
+    except RuntimeError as ex:
+        print(ex)
+    print('Program closed!')

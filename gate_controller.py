@@ -270,31 +270,62 @@ class FaultState(State):
 
 class GateController(StateMachine):
     def __init__(self) -> None:
+        # Specifies how the gate is oriented in the room.
+        gate_orientation = DigitalInputDevice('GPIO12', pull_up=True)
+        logging.info(f'Gate orientation: {gate_orientation.is_active}')
+
         # Declare motor objects for handling incoming and outgoing people
-        self.in_motor = RelayMotor('GPIO23', 'GPIO24')
-        self.out_motor = RelayMotor('GPIO17', 'GPIO27')
+        if gate_orientation.is_active:
+            self.in_motor = RelayMotor('GPIO23', 'GPIO24')
+            self.out_motor = RelayMotor('GPIO17', 'GPIO27')
+        else:
+            self.in_motor = RelayMotor('GPIO17', 'GPIO27')
+            self.out_motor = RelayMotor('GPIO23', 'GPIO24')
         
         # Declare phototransistor objects which detect, when the motors can be returned to position
-        self.phototransistor_1 = DigitalInputDevice('GPIO20', pull_up=True)
-        self.phototransistor_2 = DigitalInputDevice('GPIO21', pull_up=True)
+        if gate_orientation.is_active:
+            self.phototransistor_1 = DigitalInputDevice('GPIO20', pull_up=True)
+            self.phototransistor_2 = DigitalInputDevice('GPIO21', pull_up=True)
+        else:
+            self.phototransistor_1 = DigitalInputDevice('GPIO21', pull_up=True)
+            self.phototransistor_2 = DigitalInputDevice('GPIO20', pull_up=True)
 
         # Declare led objects to indicate the moving direction of the gate
-        self.in_led = LED('GPIO13', active_high=False)
-        self.out_led = LED('GPIO5', active_high=False)
         self.stop_led = LED('GPIO06', active_high=False, initial_value=True)
+        if gate_orientation.is_active:
+            self.in_led = LED('GPIO13', active_high=False)
+            self.out_led = LED('GPIO5', active_high=False)
+        else:
+            self.in_led = LED('GPIO5', active_high=False)
+            self.out_led = LED('GPIO13', active_high=False)
         
         # Declare button objects to handle overriding the gate control
-        self.in_button = Button('GPIO19')
-        self.out_button = Button('GPIO26')
+        if gate_orientation.is_active:
+            self.in_button = Button('GPIO19')
+            self.out_button = Button('GPIO26')
+        else:
+            self.in_button = Button('GPIO26')
+            self.out_button = Button('GPIO19')
 
         # Declare barcode readers for reading incoming and outgoing cards
         devices = usb.core.find(find_all=True, idVendor=0x05e0, idProduct=0x0600)
+        self.in_barcode = None
+        self.out_barcode = None
         for dev in devices:
             serial = usb.util.get_string(dev, dev.iSerialNumber)[4:36]
             if serial == 'E21478C6B18CE448A31DD361F4A3BCFA':
-                self.out_barcode = BarcodeReader(dev, 'out', self)
+                if gate_orientation.is_active:
+                    self.out_barcode = BarcodeReader(dev, 'out', self)
+                else:
+                    self.in_barcode = BarcodeReader(dev, 'in', self)
             if serial == '1270FBD3FECE81458C725FA0C6749F5E':
-                self.in_barcode = BarcodeReader(dev, 'in', self)
+                if gate_orientation.is_active:
+                    self.in_barcode = BarcodeReader(dev, 'in', self)
+                else:
+                    self.out_barcode = BarcodeReader(dev, 'out', self)
+        
+        if self.in_barcode is None or self.out_barcode is None:
+            raise RuntimeError('Missing barcode reader(s) in USB ports! Please connect them...')
                 
         # State machine related variables
         class States(Enum):
